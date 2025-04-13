@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 图书生成器 (Streaming + Full Memory)</title>
+    <style>
+        /* Base Styles */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+        :root {
+            --primary-color: #4a90e2;
+            --secondary-color: #f5a623;
+            --background-color: #f7f9fc;
+            --text-color: #333;
+            --light-text-color: #fff;
+            --border-color: #dfe4ea;
+            --error-color: #d0021b;
+            --success-color: #4CAF50;
+            --card-bg: #ffffff;
+            --shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            --border-radius: 8px;
+            --transition-speed: 0.3s;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        /* Container */
+        .container {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 25px;
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            width: 100%;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            text-align: center;
+            margin-bottom: 25px;
+            font-weight: 700;
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #555;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            font-size: 1rem;
+            transition: border-color var(--transition-speed), box-shadow var(--transition-speed);
+            background-color: #fff;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.2);
+        }
+
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        /* Buttons */
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: background-color var(--transition-speed), transform var(--transition-speed);
+            margin-right: 10px;
+        }
+        button:active { transform: translateY(1px); }
+        .btn-primary { background-color: var(--primary-color); color: var(--light-text-color); }
+        .btn-primary:hover { background-color: #3a7bc8; }
+        .btn-primary:disabled { background-color: #a0c3ed; cursor: not-allowed; }
+        .btn-secondary { background-color: var(--secondary-color); color: var(--light-text-color); }
+        .btn-secondary:hover { background-color: #d9901a; }
+
+        /* Settings Button & Modal */
+        .settings-button {
+            position: fixed; top: 20px; right: 20px; background: var(--card-bg);
+            border: 1px solid var(--border-color); border-radius: 50%;
+            width: 45px; height: 45px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; box-shadow: var(--shadow); transition: transform 0.2s ease-in-out;
+            z-index: 1001; color: var(--primary-color);
+        }
+        .settings-button:hover { transform: scale(1.1) rotate(15deg); color: #3a7bc8; }
+        .settings-button svg { width: 24px; height: 24px; fill: currentColor; }
+
+        .settings-modal {
+            display: none; position: fixed; z-index: 1000; left: 0; top: 0;
+            width: 100%; height: 100%; overflow: auto; background-color: rgba(0, 0, 0, 0.5);
+            padding-top: 60px; animation: fadeIn 0.3s ease-out;
+        }
+        .settings-content {
+            background-color: var(--card-bg); margin: 5% auto; padding: 30px;
+            border: 1px solid var(--border-color); width: 80%; max-width: 500px;
+            border-radius: var(--border-radius); box-shadow: 0 5px 25px rgba(0, 0, 0, 0.2);
+            position: relative; animation: slideIn 0.4s ease-out;
+        }
+        .close-button {
+            color: #aaa; position: absolute; top: 15px; right: 20px;
+            font-size: 28px; font-weight: bold; cursor: pointer;
+        }
+        .close-button:hover, .close-button:focus { color: #333; text-decoration: none; }
+
+        /* Output Area */
+        #output {
+            margin-top: 30px; padding: 20px; background-color: #f0f4f8;
+            border-radius: var(--border-radius); border: 1px solid var(--border-color);
+            min-height: 150px; transition: background-color var(--transition-speed);
+            overflow-wrap: break-word; word-wrap: break-word; white-space: pre-wrap;
+        }
+        #output h2 { /* Book Title */
+            color: var(--primary-color); margin-top: 0; margin-bottom: 20px;
+            padding-bottom: 5px; border-bottom: 2px solid var(--secondary-color);
+            font-weight: 600; animation: fadeInContent 0.6s ease-out forwards; opacity: 0;
+        }
+        #output div.chapter-container { /* Container for each chapter's generated content */
+            margin-bottom: 25px; opacity: 0;
+            animation: fadeInContent 0.5s ease-out forwards;
+            border-left: 3px solid transparent; /* For potential error indication */
+            padding-left: 10px; /* Space from potential border */
+            transition: border-color 0.3s;
+        }
+        #output div.chapter-container.error-chapter {
+             border-left-color: var(--error-color); /* Highlight error chapters */
+        }
+        #output div.chapter-content { /* The div where AI content is streamed */
+            color: #444; white-space: pre-wrap;
+        }
+
+        /* Status Area */
+        .status {
+            margin-top: 15px; padding: 10px; border-radius: var(--border-radius);
+            display: flex; align-items: center; font-weight: 500;
+            opacity: 0; transition: opacity 0.5s ease-in-out, height 0.3s ease-in-out, margin-bottom 0.3s ease-in-out;
+            height: 0; overflow: hidden; margin-bottom: 0;
+        }
+        .status.visible { opacity: 1; height: auto; margin-bottom: 15px; }
+        .status.info { background-color: #eaf2ff; color: #3a7bc8; border: 1px solid #a0c3ed; }
+        .status.error { background-color: #fdecea; color: var(--error-color); border: 1px solid #f5c6cb; }
+        .status.success { background-color: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1); width: 20px; height: 20px; border-radius: 50%;
+            border-left-color: var(--primary-color); animation: spin 1s ease infinite;
+            margin-right: 10px; display: inline-block; flex-shrink: 0;
+        }
+
+        /* Animations */
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeInContent { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    </style>
+</head>
+<body>
+
+    <!-- Settings Button -->
+    <button class="settings-button" id="settingsBtn" aria-label="打开设置">
+        <svg viewBox="0 0 24 24"> <path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/> </svg>
+    </button>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="settings-modal">
+        <div class="settings-content">
+            <span class="close-button" id="closeSettingsBtn">&times;</span>
+            <h2>设置</h2>
+            <div class="form-group"> <label for="apiKey">Gemini API 密钥:</label> <input type="password" id="apiKey" placeholder="输入你的 API 密钥"> </div>
+            <div class="form-group"> <label for="modelInput">模型名称:</label> <input type="text" id="modelInput" placeholder="例如: gemini-1.5-flash-latest"> <small style="display: block; margin-top: 5px; color: #666;">输入有效的 Gemini 模型名称。</small> </div>
+            <button id="saveSettingsBtn" class="btn-primary">保存设置</button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container">
+        <h1>AI 图书生成器 (Full Memory)</h1>
+        <div class="form-group"> <label for="subject">图书主题:</label> <textarea id="subject" rows="3" placeholder="输入你想要生成书籍的详细主题..."></textarea> </div>
+        <div class="form-group"> <label for="languageInput">语言:</label> <input type="text" id="languageInput" placeholder="例如: 简体中文, English" value="简体中文"> <small style="display: block; margin-top: 5px; color: #666;">指定生成内容的语言。</small> </div>
+        <div class="form-group"> <label for="additionalInfo">额外说明 (可选):</label> <textarea id="additionalInfo" rows="2" placeholder="例如：语气要幽默..."></textarea> </div>
+        <button id="generateBtn" class="btn-primary">生成图书内容</button>
+        <div id="status" class="status" role="alert"> <div id="spinner" class="spinner" style="display: none;"></div> <span id="statusText"></span> </div>
+        <div id="output"> <p>请在上方输入主题、选择语言并点击生成按钮。</p> </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const subjectInput = document.getElementById('subject');
+        const languageInput = document.getElementById('languageInput');
+        const additionalInfoInput = document.getElementById('additionalInfo');
+        const generateBtn = document.getElementById('generateBtn');
+        const outputDiv = document.getElementById('output');
+        const statusDiv = document.getElementById('status');
+        const statusText = document.getElementById('statusText');
+        const spinner = document.getElementById('spinner');
+        const settingsBtn = document.getElementById('settingsBtn');
+        const settingsModal = document.getElementById('settingsModal');
+        const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+        const apiKeyInput = document.getElementById('apiKey');
+        const modelInput = document.getElementById('modelInput');
+        const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+
+        // --- Constants and State ---
+        const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
+        const DEFAULT_MODEL = 'gemini-1.5-flash-latest';
+        const DEFAULT_LANGUAGE = '简体中文';
+        let currentApiKey = localStorage.getItem('geminiApiKey') || '';
+        let currentModel = localStorage.getItem('geminiModel') || DEFAULT_MODEL;
+
+        // --- Settings Modal Logic ---
+        function openSettings() {
+            apiKeyInput.value = currentApiKey;
+            modelInput.value = currentModel;
+            settingsModal.style.display = 'block';
+        }
+        function closeSettings() {
+            settingsModal.style.display = 'none';
+        }
+        function saveSettings() {
+            currentApiKey = apiKeyInput.value.trim();
+            currentModel = modelInput.value.trim() || DEFAULT_MODEL;
+            if (currentApiKey) localStorage.setItem('geminiApiKey', currentApiKey);
+            else localStorage.removeItem('geminiApiKey');
+            localStorage.setItem('geminiModel', currentModel);
+            updateStatus('设置已保存。', 'success', false);
+            closeSettings();
+            setTimeout(clearStatus, 3000);
+        }
+        settingsBtn.addEventListener('click', openSettings);
+        closeSettingsBtn.addEventListener('click', closeSettings);
+        saveSettingsBtn.addEventListener('click', saveSettings);
+        window.addEventListener('click', (event) => { if (event.target === settingsModal) closeSettings(); });
+
+        // --- UI Update Functions ---
+        function updateStatus(message, type = 'info', showSpinner = false) {
+             statusDiv.classList.remove('info', 'error', 'success');
+             statusDiv.classList.add(type, 'visible');
+             statusText.textContent = message;
+             spinner.style.display = showSpinner ? 'inline-block' : 'none';
+         }
+        function clearStatus() {
+             statusDiv.classList.remove('visible', 'info', 'error', 'success');
+             setTimeout(() => {
+                 if (!statusDiv.classList.contains('visible')) {
+                     statusText.textContent = '';
+                     spinner.style.display = 'none';
+                 }
+             }, 300);
+        }
+
+
+        // --- API Call Functions (Modified for History) ---
+
+        /**
+         * Makes a standard (non-streaming) API call to Gemini, including conversation history.
+         * @param {string} currentPrompt - The new prompt for this turn.
+         * @param {Array} history - The conversation history array.
+         * @param {string} apiKey - The API key.
+         * @param {string} model - The model name.
+         * @returns {Promise<string>} - The model's response text.
+         */
+        async function callGeminiAPIWithHistory(currentPrompt, history, apiKey, model) {
+            if (!apiKey) throw new Error("API 密钥未设置。");
+            const url = `${GEMINI_API_BASE_URL}${model}:generateContent?key=${apiKey}`;
+            const payload = {
+                "contents": [ ...history, { "role": "user", "parts": [{"text": currentPrompt }] } ],
+                "generationConfig": { "temperature": 0.7, "topP": 0.95, "topK": 64, "responseMimeType": "text/plain" }
+            };
+            console.log("Sending payload (non-streaming):", JSON.stringify(payload, null, 2).substring(0, 500) + "..."); // Log start of payload
+
+            try {
+                const response = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+                if (!response.ok) {
+                    const errorBody = await response.json().catch(() => ({}));
+                    console.error("API Error Response:", errorBody);
+                    throw new Error(`API 请求失败: ${response.status} ${response.statusText}. ${errorBody?.error?.message || '无法获取错误详情'}`);
+                }
+                const data = await response.json();
+                console.log("Received response (non-streaming)"); // Don't log full response by default
+
+                if (data.promptFeedback?.blockReason) { throw new Error(`请求被阻止: ${data.promptFeedback.blockReason}. 原因: ${data.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ') || '未提供具体原因'}`); }
+                if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    const finishReason = data.candidates?.[0]?.finishReason;
+                    if (finishReason && finishReason !== "STOP") throw new Error(`内容生成提前结束: ${finishReason}.`);
+                    throw new Error("API 返回了空的或无效的内容。");
+                }
+                return data.candidates[0].content.parts[0].text;
+            } catch (error) { console.error("Error in callGeminiAPIWithHistory:", error); throw error; }
+        }
+
+
+        /**
+         * Makes a streaming API call to Gemini, including conversation history.
+         * Updates the targetElement in real-time.
+         * Returns the fully aggregated response text upon completion.
+         * @param {string} currentPrompt - The new prompt for this turn.
+         * @param {Array} history - The conversation history array.
+         * @param {string} apiKey - The API key.
+         * @param {string} model - The model name.
+         * @param {HTMLElement} targetElement - The HTML element to stream text into.
+         * @returns {Promise<string>} - The fully aggregated model response text.
+         */
+        async function streamGeminiContentWithHistory(currentPrompt, history, apiKey, model, targetElement) {
+            if (!apiKey) throw new Error("API 密钥未设置。");
+            const url = `${GEMINI_API_BASE_URL}${model}:streamGenerateContent?key=${apiKey}&alt=sse`;
+            const payload = {
+                 "contents": [ ...history, { "role": "user", "parts": [{"text": currentPrompt }] } ],
+                 "generationConfig": { "temperature": 0.7, "topP": 0.95, "topK": 64 }
+            };
+            console.log("Sending payload (streaming):", JSON.stringify(payload, null, 2).substring(0, 500) + "..."); // Log start of payload
+
+            let fullResponseText = '';
+            targetElement.textContent = ''; // Clear target element
+
+            try {
+                const response = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    let errorMessage = `API 请求失败: ${response.status} ${response.statusText}.`;
+                    try { const errorBody = JSON.parse(errorText); errorMessage += ` ${errorBody?.error?.message || ''}`; }
+                    catch { if (errorText.length < 200) errorMessage += ` ${errorText}`; }
+                    throw new Error(errorMessage);
+                }
+                if (!response.body) throw new Error("浏览器不支持流式响应 (ReadableStream)。");
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    let lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const jsonString = line.substring(6).trim();
+                            if (jsonString) {
+                                try {
+                                    const jsonChunk = JSON.parse(jsonString);
+                                    if (jsonChunk.promptFeedback?.blockReason) { throw new Error(`请求在流中被阻止: ${jsonChunk.promptFeedback.blockReason}. 原因: ${jsonChunk.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ') || '未提供具体原因'}`); }
+                                    if (jsonChunk.candidates?.[0]?.content?.parts?.[0]?.text) {
+                                        const textChunk = jsonChunk.candidates[0].content.parts[0].text;
+                                        targetElement.textContent += textChunk;
+                                        fullResponseText += textChunk;
+                                    }
+                                     const finishReason = jsonChunk.candidates?.[0]?.finishReason;
+                                     if (finishReason && finishReason !== "STOP" && finishReason !== "UNSPECIFIED") {
+                                         console.warn("Stream chunk finish reason:", finishReason);
+                                     }
+                                } catch (e) {
+                                    console.error("Error parsing stream chunk:", jsonString, e);
+                                     if (e.message.includes('请求在流中被阻止')) throw e;
+                                }
+                            }
+                        }
+                    }
+                }
+                 console.log("Streaming finished. Full text length:", fullResponseText.length);
+                 return fullResponseText;
+
+            } catch (error) {
+                console.error("Error during streaming:", error);
+                targetElement.textContent += `\n\n--- [流式传输错误] ---\n${error.message}\n---------------------\n`;
+                throw error;
+            }
+        }
+
+
+        // --- Main Generation Logic (Modified for History) ---
+        async function generateBook() {
+            const subject = subjectInput.value.trim();
+            const language = languageInput.value.trim() || DEFAULT_LANGUAGE;
+            const additionalInfo = additionalInfoInput.value.trim();
+            currentApiKey = localStorage.getItem('geminiApiKey') || '';
+            currentModel = localStorage.getItem('geminiModel') || DEFAULT_MODEL;
+
+            if (!subject || !language || !currentApiKey) {
+                if (!subject) updateStatus('错误：请输入图书主题。', 'error');
+                else if (!language) updateStatus('错误：请输入生成语言。', 'error');
+                else updateStatus('错误：请先配置 Gemini API 密钥。', 'error');
+                if (!currentApiKey) openSettings();
+                return;
+            }
+
+            generateBtn.disabled = true;
+            outputDiv.innerHTML = '';
+            updateStatus('开始生成书籍内容 (with memory)...', 'info', true);
+
+            let conversationHistory = []; // Initialize history
+            let bookStructure;
+            let bookTitle = "生成中...";
+            let hadChapterError = false;
+
+            try {
+                const titleElement = document.createElement('h2');
+                titleElement.id = 'bookTitle';
+                titleElement.textContent = '书名生成中...';
+                outputDiv.appendChild(titleElement);
+                const chaptersDiv = document.createElement('div');
+                chaptersDiv.id = 'chaptersContent';
+                outputDiv.appendChild(chaptersDiv);
+
+                // --- Step 1: Get Book Structure ---
+                updateStatus('正在生成书籍大纲 (using history)...', 'info', true);
+                const prompt1 = `Write in JSON format:\n\n{"Title of section goes here":"Description of section goes here",\n"Title of section goes here":{"Title of section goes here":"Description of section goes here","Title of section goes here":"Description of section goes here","Title of section goes here":"Description of section goes here"}}
+
+Write a comprehensive structure, omiting introduction and conclusion sections (forward, author's note, summary), for a book. Only provide up to one level of depth for nested sections. Make clear titles and descriptions that have no overlap with other sections. It is very important that use the following subject and additional instructions to write the book. 
+
+Please write the output in this language: ${language}.
+
+<subject>${subject}</subject>
+
+${additionalInfo ? `\n\nAdditional Instructions:\n${additionalInfo}` : ''}`;
+
+                const structureJsonString = await callGeminiAPIWithHistory(prompt1, conversationHistory, currentApiKey, currentModel);
+                conversationHistory.push({ "role": "user", "parts": [{"text": prompt1 }] });
+                conversationHistory.push({ "role": "model", "parts": [{"text": structureJsonString }] });
+                // console.log("History after structure:", JSON.stringify(conversationHistory));
+
+                try {
+                    const cleanedJsonString = structureJsonString.replace(/^```json\s*|```$/g, '').trim();
+                    bookStructure = JSON.parse(cleanedJsonString);
+                } catch (e) { throw new Error(`无法解析书籍结构 JSON: ${e.message}. Raw: ${structureJsonString}`); }
+
+                // --- Step 2: Get Book Title ---
+                updateStatus('正在生成书名 (using history)...', 'info', true);
+                const prompt2 = `Generate suitable book titles for the provided topics. There is only one generated book title! Don't give any explanation or add any symbols, just write the title of the book. The requirement for this title is that it must be between 7 and 25 words long, and it must be attractive enough!
+
+Generate a book title for the following topic. There is only one generated book title! Don't give any explanation or add any symbols, just write the title of the book. The requirement for this title is that it must be at least 7 words and 25 words long, and it must be attractive enough:
+
+Please write the output in this language: ${language}.
+
+<subject>${subject}</subject>
+
+${additionalInfo ? `\n\nAdditional Instructions:\n${additionalInfo}` : ''}`;
+
+                bookTitle = await callGeminiAPIWithHistory(prompt2, conversationHistory, currentApiKey, currentModel);
+                conversationHistory.push({ "role": "user", "parts": [{"text": prompt2 }] });
+                conversationHistory.push({ "role": "model", "parts": [{"text": bookTitle }] });
+                // console.log("History after title:", JSON.stringify(conversationHistory));
+                titleElement.textContent = bookTitle.trim() || "未能生成标题";
+
+                // --- Step 3: Generate Chapters ---
+                const sections = Object.entries(bookStructure);
+                if (sections.length === 0) throw new Error("生成的书籍结构为空。");
+
+                for (const [index, [sectionTitle, sectionValue]] of sections.entries()) {
+                    const chapterIndex = index + 1;
+                    updateStatus(`正在生成章节 ${chapterIndex}/${sections.length} (${sectionTitle}) (using history)...`, 'info', true);
+
+                    const chapterContainer = document.createElement('div');
+                    chapterContainer.className = 'chapter-container';
+                    chapterContainer.style.animationDelay = `${index * 0.15}s`;
+                    const chapterBodyElement = document.createElement('div');
+                    chapterBodyElement.className = 'chapter-content';
+                    chapterContainer.appendChild(chapterBodyElement);
+                    chaptersDiv.appendChild(chapterContainer);
+
+                    let sectionDataString = `"${sectionTitle}": `;
+                    sectionDataString += (typeof sectionValue === 'string') ? `"${sectionValue}"` : JSON.stringify(sectionValue, null, 2);
+
+                    const prompt3 = `You are an expert writer. Generate a long, comprehensive, structured chapter for the section provided. If additional instructions are provided, consider them very important. Only output the content.
+
+Generate a long, comprehensive, structured chapter. Use the following section and important instructions:
+
+Please write the output in this language: ${language}.
+
+<subject>${subject}</subject>
+
+${additionalInfo ? `\n\nAdditional Instructions:\n${additionalInfo}` : ''}
+
+<section_title>${sectionDataString}</section_title>`;
+
+                    try {
+                        const chapterFullText = await streamGeminiContentWithHistory(prompt3, conversationHistory, currentApiKey, currentModel, chapterBodyElement);
+                        // Update history only on success
+                        conversationHistory.push({ "role": "user", "parts": [{"text": prompt3 }] });
+                        conversationHistory.push({ "role": "model", "parts": [{"text": chapterFullText }] });
+                        // console.log(`History after Chapter ${chapterIndex}:`, JSON.stringify(conversationHistory));
+
+                    } catch (chapterError) {
+                        hadChapterError = true;
+                        console.error(`Error streaming chapter "${sectionTitle}":`, chapterError);
+                        chapterContainer.classList.add('error-chapter');
+                        updateStatus(`章节 "${sectionTitle}" 生成时出错。继续下一章节...`, 'error', true);
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                    }
+                } // End of chapter loop
+
+                if (hadChapterError) {
+                    updateStatus('图书内容生成完毕，但部分章节可能存在错误。', 'error', false);
+                } else {
+                    updateStatus('图书内容生成完毕！', 'success', false);
+                }
+
+            } catch (error) { // Catch critical errors (structure/title gen or others)
+                console.error("Generation process failed critically:", error);
+                updateStatus(`生成过程中出错: ${error.message}`, 'error', false);
+                if (outputDiv.innerHTML.trim() === '') {
+                    outputDiv.innerHTML = `<p style="color: var(--error-color);">生成失败: ${error.message}</p>`;
+                }
+            } finally {
+                generateBtn.disabled = false;
+                setTimeout(clearStatus, 10000);
+            }
+        }
+
+        // --- Event Listeners and Initial Setup ---
+        generateBtn.addEventListener('click', generateBook);
+        if (!currentApiKey) {
+            setTimeout(() => { updateStatus('提示：请点击右上角齿轮图标设置 Gemini API 密钥。', 'info'); }, 500);
+        } else {
+             modelInput.value = currentModel;
+        }
+        languageInput.value = DEFAULT_LANGUAGE;
+
+    </script>
+
+</body>
+</html>
